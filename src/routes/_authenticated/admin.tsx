@@ -123,13 +123,6 @@ function Products() {
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) toast.error(error.message); else refresh();
   };
-  const upload = async (file: File) => {
-    const path = `${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9.]/g, "")}`;
-    const { error } = await supabase.storage.from("product-images").upload(path, file);
-    if (error) return toast.error(error.message);
-    setEdit((e) => ({ ...e, image_url: supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl }));
-  };
-
   return (
     <div className="mt-6">
       <Button onClick={() => setEdit({ ...empty })}><Plus className="mr-1 h-4 w-4" />Add product</Button>
@@ -155,7 +148,7 @@ function Products() {
                 <div><Label>Stock</Label><Input type="number" min={0} value={edit.stock ?? 0} onChange={(e) => setEdit({ ...edit, stock: Number(e.target.value) })} /></div>
               </div>
               <div><Label>Description</Label><Textarea rows={4} value={edit.description ?? ""} onChange={(e) => setEdit({ ...edit, description: e.target.value })} maxLength={2000} /></div>
-              <div><Label>Image</Label><Input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />{edit.image_url && <img src={edit.image_url} alt="" className="mt-2 h-24 rounded object-cover" />}</div>
+              <div><Label>Image URL</Label><Input placeholder="https://… or /images/…" value={edit.image_url ?? ""} onChange={(e) => setEdit({ ...edit, image_url: e.target.value })} maxLength={500} />{edit.image_url && <img src={edit.image_url} alt="" className="mt-2 h-24 rounded object-cover" />}</div>
               <div className="flex gap-6">
                 <label className="flex items-center gap-2 text-sm"><Switch checked={!!edit.featured} onCheckedChange={(v) => setEdit({ ...edit, featured: v })} />Featured</label>
                 <label className="flex items-center gap-2 text-sm"><Switch checked={edit.active !== false} onCheckedChange={(v) => setEdit({ ...edit, active: v })} />Visible</label>
