@@ -45,7 +45,7 @@ function Account() {
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { error } = await supabase.from("profiles").update({ full_name: p.full_name?.slice(0, 100), phone: p.phone?.slice(0, 20), address: p.address?.slice(0, 300), city: p.city?.slice(0, 80), state: p.state?.slice(0, 80), pincode: p.pincode?.slice(0, 6) }).eq("id", user!.id);
+    const { error } = await supabase.from("profiles").update({ full_name: (p["full_name"] ?? "").slice(0, 100) || null, phone: (p["phone"] ?? "").slice(0, 20) || null, address: (p["address"] ?? "").slice(0, 300) || null, city: (p["city"] ?? "").slice(0, 80) || null, state: (p["state"] ?? "").slice(0, 80) || null, pincode: (p["pincode"] ?? "").slice(0, 6) || null }).eq("id", user!.id);
     if (error) toast.error(error.message); else { toast.success("Saved"); qc.invalidateQueries(); }
   };
 
