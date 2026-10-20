@@ -34,11 +34,11 @@ function Contact() {
     e.preventDefault();
     const form = e.currentTarget;
     const parsed = schema.safeParse(Object.fromEntries(new FormData(form)));
-    if (!parsed.success) return toast.error(parsed.error.issues[0].message);
+    if (!parsed.success) { toast.error(parsed.error.issues[0]?.message ?? "Check the form"); return; }
     setBusy(true);
     const { error } = await supabase.from("contact_messages").insert(parsed.data);
     setBusy(false);
-    if (error) return toast.error("Could not send. Please try again.");
+    if (error) { toast.error("Could not send. Please try again."); return; }
     form.reset();
     toast.success("Thanks! We'll reply within a day.");
   };

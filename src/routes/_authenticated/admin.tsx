@@ -113,9 +113,9 @@ function Products() {
       price_inr: Math.round(Number(edit.price_inr)), stock: Math.round(Number(edit.stock)), image_url: String(edit.image_url ?? ""),
       featured: !!edit.featured, active: edit.active !== false,
     };
-    if (!row.name || row.price_inr <= 0) return toast.error("Name and a price above ₹0 are required.");
+    if (!row.name || row.price_inr <= 0) { toast.error("Name and a price above ₹0 are required."); return; }
     const { error } = edit.id ? await supabase.from("products").update(row).eq("id", edit.id) : await supabase.from("products").insert(row);
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     toast.success("Saved"); setEdit(null); refresh();
   };
   const del = async (id: string) => {
