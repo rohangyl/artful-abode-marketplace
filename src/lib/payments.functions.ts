@@ -79,15 +79,71 @@ export const verifyPayment = createServerFn({ method: "POST" })
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: order } = await supabaseAdmin
-      .from("orders").select("id,status,user_id").eq("razorpay_order_id", data.razorpay_order_id).eq("user_id", context.userId).single();
+      .from("orders")
+      .select("id,status,user_id,total_inr,shipping_name,shipping_phone,shipping_address,shipping_city,shipping_state,shipping_pincode")
+      .eq("razorpay_order_id", data.razorpay_order_id)
+      .eq("user_id", context.userId)
+      .single();
     if (!order) throw new Error("Order not found.");
+    let paymentConfirmed = order.status === "paid";
     if (order.status === "pending") {
-      await supabaseAdmin.from("orders").update({ status: "paid", razorpay_payment_id: data.razorpay_payment_id }).eq("id", order.id);
-      const { data: items } = await supabaseAdmin.from("order_items").select("product_id,quantity").eq("order_id", order.id);
-      for (const it of items ?? []) {
-        if (!it.product_id) continue;
-        const { data: p } = await supabaseAdmin.from("products").select("stock").eq("id", it.product_id).single();
-        if (p) await supabaseAdmin.from("products").update({ stock: Math.max(0, p.stock - it.quantity) }).eq("id", it.product_id);
+      const { data: updatedOrder, error: updateError } = await supabaseAdmin
+        .from("orders")
+        .update({ status: "paid", razorpay_payment_id: data.razorpay_payment_id })
+        .eq("id", order.id)
+        .eq("status", "pending")
+        .select("id")
+        .maybeSingle();
+      if (updateError) throw new Error(updateError.message);
+
+      if (updatedOrder) {
+        paymentConfirmed = true;
+        const { data: items, error: itemsError } = await supabaseAdmin
+          .from("order_items")
+          .select("product_id,quantity")
+          .eq("order_id", order.id);
+        if (itemsError) throw new Error(itemsError.message);
+        for (const item of items ?? []) {
+          if (!item.product_id) continue;
+          const { data: product, error: productError } = await supabaseAdmin
+            .from("products")
+            .select("stock")
+            .eq("id", item.product_id)
+            .single();
+          if (productError) throw new Error(productError.message);
+          const { error: stockError } = await supabaseAdmin
+            .from("products")
+            .update({ stock: Math.max(0, product.stock - item.quantity) })
+            .eq("id", item.product_id);
+          if (stockError) throw new Error(stockError.message);
+        }
+      } else {
+        const { data: latestOrder, error: latestOrderError } = await supabaseAdmin
+          .from("orders")
+          .select("status")
+          .eq("id", order.id)
+          .single();
+        if (latestOrderError) throw new Error(latestOrderError.message);
+        paymentConfirmed = latestOrder.status === "paid";
+      }
+    }
+
+    if (paymentConfirmed) {
+      const [{ data: userResult }, { data: items, error: itemsError }] = await Promise.all([
+        context.supabase.auth.getUser(),
+        supabaseAdmin
+          .from("order_items")
+          .select("product_name,quantity,unit_price_inr")
+          .eq("order_id", order.id),
+      ]);
+      if (itemsError) throw new Error(itemsError.message);
+      if (userResult.user?.email) {
+        try {
+          const { sendOrderConfirmationEmail } = await import("@/lib/email.server");
+          await sendOrderConfirmationEmail(supabaseAdmin, userResult.user.email, order, items ?? []);
+        } catch (error) {
+          console.error("Order confirmation email could not be sent", { orderId: order.id, error });
+        }
       }
     }
     return { orderId: order.id };

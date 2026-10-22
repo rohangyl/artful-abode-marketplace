@@ -38,6 +38,27 @@ export type Database = {
         }
         Relationships: []
       }
+      email_notifications: {
+        Row: {
+          created_at: string
+          event_key: string
+          recipient_email: string
+          sent_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_key: string
+          recipient_email: string
+          sent_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_key?: string
+          recipient_email?: string
+          sent_at?: string | null
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           id: string

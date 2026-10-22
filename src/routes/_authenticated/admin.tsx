@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plus } from "lucide-react";
+import { Minus, Pencil, Trash2, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
@@ -118,6 +118,24 @@ function Products() {
     if (error) { toast.error(error.message); return; }
     toast.success("Saved"); setEdit(null); refresh();
   };
+  const adjustStock = async (product: Product, adjustment: number) => {
+    const stock = Math.max(0, product.stock + adjustment);
+    const { error } = await supabase.from("products").update({ stock }).eq("id", product.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    refresh();
+  };
+  const markOutOfStock = async (product: Product) => {
+    const { error } = await supabase.from("products").update({ stock: 0 }).eq("id", product.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(`${product.name} marked out of stock.`);
+    refresh();
+  };
   const del = async (id: string) => {
     if (!confirm("Delete this product?")) return;
     const { error } = await supabase.from("products").delete().eq("id", id);
@@ -128,9 +146,15 @@ function Products() {
       <Button onClick={() => setEdit({ ...empty })}><Plus className="mr-1 h-4 w-4" />Add product</Button>
       <div className="mt-6 grid gap-3">
         {data?.map((p) => (
-          <div key={p.id} className="flex items-center gap-4 rounded-md bg-card p-3 shadow-soft">
+          <div key={p.id} className="flex flex-wrap items-center gap-4 rounded-md bg-card p-3 shadow-soft">
             <img src={p.image_url} alt="" className="h-16 w-14 rounded object-cover" />
-            <div className="flex-1"><p className="font-medium">{p.name} {!p.active && <span className="text-xs text-muted-foreground">(hidden)</span>}</p><p className="text-sm text-muted-foreground">{p.category} · {formatINR(p.price_inr)} · {p.stock} in stock</p></div>
+            <div className="min-w-36 flex-1"><p className="font-medium">{p.name} {!p.active && <span className="text-xs text-muted-foreground">(hidden)</span>}</p><p className="text-sm text-muted-foreground">{p.category} · {formatINR(p.price_inr)} · {p.stock === 0 ? "Out of stock" : `${p.stock} in stock`}</p></div>
+            <div className="flex items-center gap-1" aria-label={`Stock controls for ${p.name}`}>
+              <Button type="button" variant="outline" size="icon" aria-label={`Decrease ${p.name} stock`} disabled={p.stock === 0} onClick={() => adjustStock(p, -1)}><Minus className="h-4 w-4" /></Button>
+              <span className="min-w-8 text-center text-sm font-medium">{p.stock}</span>
+              <Button type="button" variant="outline" size="icon" aria-label={`Increase ${p.name} stock`} onClick={() => adjustStock(p, 1)}><Plus className="h-4 w-4" /></Button>
+              <Button type="button" variant="outline" size="sm" disabled={p.stock === 0} onClick={() => markOutOfStock(p)}>Out of stock</Button>
+            </div>
             <Button variant="ghost" size="icon" aria-label="Edit" onClick={() => setEdit(p)}><Pencil className="h-4 w-4" /></Button>
             <Button variant="ghost" size="icon" aria-label="Delete" onClick={() => del(p.id)}><Trash2 className="h-4 w-4" /></Button>
           </div>

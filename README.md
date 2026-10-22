@@ -22,5 +22,30 @@ Prefer working locally? You need Node.js and npm — [install with nvm](https://
 git clone <this-repository-url>
 cd <repository-name>
 npm i
-npm run dev
+npm start
 ```
+
+## Transactional email setup
+
+Order confirmations are sent after Razorpay payment verification. A welcome
+email is sent the first time a confirmed user opens the app after signing in.
+Email delivery uses [Resend](https://resend.com/); the API key and sender must
+be configured on the server, never as `VITE_*` variables.
+
+1. Create a Resend account and verify a sending domain. For local-only testing,
+   Resend's `onboarding@resend.dev` sender can only send to the account owner's
+   verified email address.
+2. Add `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to the local `.env` file and
+   to the production server's environment variables. Use a sender such as
+   `Art & Decor <orders@your-verified-domain.example>`.
+3. In the Supabase SQL Editor, run
+   [`supabase/migrations/20261022180000_email_notifications.sql`](./supabase/migrations/20261022180000_email_notifications.sql)
+   once to create the private email-delivery log table.
+4. Restart the local app. For production, configure the same server-side
+   variables and apply the migration to the production Supabase project.
+
+## Login inactivity timeout
+
+Signed-in users are automatically logged out after one minute without activity.
+The timeout is tracked across tabs and survives a page reload on the same
+browser.
