@@ -96,7 +96,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div className="rounded-md bg-card p-5 shadow-soft"><p className="eyebrow">{label}</p><p className="mt-2 font-display text-3xl">{value}</p></div>;
 }
 
-const empty = { name: "", slug: "", description: "", category: "Decor", price_inr: 0, image_url: "", stock: 0, featured: false, active: true };
+const empty = { name: "", slug: "", description: "", category: "Decor", price_inr: 0, image_url: "", image_urls: [] as string[], stock: 0, featured: false, active: true };
 
 function Products() {
   const qc = useQueryClient();
@@ -111,6 +111,7 @@ function Products() {
       name: String(edit.name ?? "").trim(), description: String(edit.description ?? ""), category: String(edit.category ?? "Decor"),
       slug: (edit.slug || String(edit.name)).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
       price_inr: Math.round(Number(edit.price_inr)), stock: Math.round(Number(edit.stock)), image_url: String(edit.image_url ?? ""),
+      image_urls: (edit.image_urls ?? []).map((url) => url.trim()).filter(Boolean),
       featured: !!edit.featured, active: edit.active !== false,
     };
     if (!row.name || row.price_inr <= 0) { toast.error("Name and a price above ₹0 are required."); return; }
@@ -173,6 +174,7 @@ function Products() {
               </div>
               <div><Label>Description</Label><Textarea rows={4} value={edit.description ?? ""} onChange={(e) => setEdit({ ...edit, description: e.target.value })} maxLength={2000} /></div>
               <div><Label>Image URL</Label><Input placeholder="https://… or /images/…" value={edit.image_url ?? ""} onChange={(e) => setEdit({ ...edit, image_url: e.target.value })} maxLength={500} />{edit.image_url && <img src={edit.image_url} alt="" className="mt-2 h-24 rounded object-cover" />}</div>
+              <div><Label>More product photos</Label><Textarea rows={3} placeholder={"One image URL per line\nhttps://… or /images/…"} value={(edit.image_urls ?? []).join("\n")} onChange={(e) => setEdit({ ...edit, image_urls: e.target.value.split("\n") })} maxLength={5000} /><p className="mt-1 text-xs text-muted-foreground">Add one URL per line. The first image above remains the main product photo.</p></div>
               <div className="flex gap-6">
                 <label className="flex items-center gap-2 text-sm"><Switch checked={!!edit.featured} onCheckedChange={(v) => setEdit({ ...edit, featured: v })} />Featured</label>
                 <label className="flex items-center gap-2 text-sm"><Switch checked={edit.active !== false} onCheckedChange={(v) => setEdit({ ...edit, active: v })} />Visible</label>

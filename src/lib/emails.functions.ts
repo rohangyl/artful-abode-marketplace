@@ -17,8 +17,11 @@ export const sendWelcomeEmailOnce = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { sendWelcomeEmail } = await import("@/lib/email.server");
     const { user } = data;
-    const metadataName = user.user_metadata?.full_name ?? user.user_metadata?.name;
+    const email = user.email;
+    if (!email || !user.email_confirmed_at) return { sent: false };
+    const userMetadata = user.user_metadata as Record<string, unknown> | undefined;
+    const metadataName = userMetadata?.["full_name"] ?? userMetadata?.["name"];
     const name = typeof metadataName === "string" ? metadataName : "";
-    const sent = await sendWelcomeEmail(supabaseAdmin, user.id, user.email, name);
+    const sent = await sendWelcomeEmail(supabaseAdmin, user.id, email, name);
     return { sent };
   });

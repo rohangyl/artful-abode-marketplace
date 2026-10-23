@@ -63,11 +63,13 @@ async function sendEmailOnce(
   subject: string,
   html: string,
 ): Promise<boolean> {
-  const apiKey = process.env["RESEND_API_KEY"];
-  const from = process.env["RESEND_FROM_EMAIL"];
-  if (!apiKey || !from) {
-    throw new Error("Email notifications require RESEND_API_KEY and RESEND_FROM_EMAIL.");
-  }
+  const resendApiKey = process.env["RESEND_API_KEY"];
+  const resendFromEmail = process.env["RESEND_FROM_EMAIL"];
+  const mode = process.env["MAILTRAP_MODE"];
+  const apiToken = process.env["MAILTRAP_API_TOKEN"];
+  const fromEmail = process.env["MAILTRAP_FROM_EMAIL"];
+  const fromName = process.env["MAILTRAP_FROM_NAME"] ?? "Art & Decor";
+  const inboxId = process.env["MAILTRAP_INBOX_ID"];
 
   const { error: reserveError } = await admin
     .from("email_notifications")
@@ -75,38 +77,111 @@ async function sendEmailOnce(
       { event_key: eventKey, recipient_email: recipient },
       { onConflict: "event_key", ignoreDuplicates: true },
     );
-  if (reserveError) throw new Error(`Could not reserve email notification: ${reserveError.message}`);
+  if (reserveError)
+    throw new Error("Could not reserve email notification: " + reserveError.message);
 
   const { data: existing, error: lookupError } = await admin
     .from("email_notifications")
-    .select("sent_at")
+    .select("sent_at,recipient_email")
     .eq("event_key", eventKey)
     .single();
-  if (lookupError) throw new Error(`Could not check email notification: ${lookupError.message}`);
-  if (existing.sent_at) return false;
+  if (lookupError) throw new Error("Could not check email notification: " + lookupError.message);
+  if (existing.sent_at) return existing.recipient_email.toLowerCase() === recipient.toLowerCase();
 
-  const response = await fetch("https://api.resend.com/emails", {
+  if (resendApiKey) {
+    if (!resendFromEmail) {
+      throw new Error("Email notifications require RESEND_FROM_EMAIL.");
+    }
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + resendApiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: resendFromEmail,
+        to: [recipient],
+        subject,
+        html,
+      }),
+    });
+
+    const result: unknown = await response.json();
+    const accepted =
+      typeof result === "object" &&
+      result !== null &&
+      "id" in result &&
+      typeof result.id === "string" &&
+      result.id.length > 0;
+
+    if (!response.ok || !accepted) {
+      console.error("Resend email request failed", {
+        status: response.status,
+        eventKey,
+        response: result,
+      });
+      throw new Error("Resend email request failed with status " + response.status + ".");
+    }
+
+    const { error: updateError } = await admin
+      .from("email_notifications")
+      .update({ sent_at: new Date().toISOString() })
+      .eq("event_key", eventKey);
+    if (updateError) throw new Error("Could not record sent email: " + updateError.message);
+    return true;
+  }
+
+  if (mode !== "sandbox" && mode !== "transactional") {
+    throw new Error("Email notifications require MAILTRAP_MODE to be sandbox or transactional.");
+  }
+  if (!apiToken) throw new Error("Email notifications require MAILTRAP_API_TOKEN.");
+  if (mode === "sandbox" && !inboxId) {
+    throw new Error("Mailtrap sandbox email notifications require MAILTRAP_INBOX_ID.");
+  }
+  if (mode === "transactional" && !fromEmail) {
+    throw new Error("Mailtrap transactional email notifications require MAILTRAP_FROM_EMAIL.");
+  }
+
+  const mailtrapFromEmail =
+    mode === "sandbox" ? (fromEmail ?? "test@example.com") : (fromEmail ?? "noreply@example.com");
+  const safeInboxId = inboxId ?? "";
+
+  const endpoint =
+    mode === "sandbox"
+      ? "https://sandbox.api.mailtrap.io/api/send/" + encodeURIComponent(safeInboxId)
+      : "https://send.api.mailtrap.io/api/send";
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "Api-Token": apiToken,
       "Content-Type": "application/json",
-      "Idempotency-Key": eventKey,
     },
-    body: JSON.stringify({ from, to: [recipient], subject, html }),
+    body: JSON.stringify({
+      from: {
+        email: mailtrapFromEmail,
+        name: fromName,
+      },
+      to: [{ email: recipient }],
+      subject,
+      html,
+    }),
   });
-  if (!response.ok) {
-    console.error("Email provider request failed", { status: response.status, eventKey });
-    throw new Error(`Email provider request failed with status ${response.status}.`);
+  const result: unknown = await response.json();
+  const accepted =
+    typeof result === "object" && result !== null && "success" in result && result.success === true;
+  if (!response.ok || !accepted) {
+    console.error("Mailtrap email request failed", { status: response.status, eventKey });
+    throw new Error("Mailtrap email request failed with status " + response.status + ".");
   }
 
   const { error: updateError } = await admin
     .from("email_notifications")
     .update({ sent_at: new Date().toISOString() })
     .eq("event_key", eventKey);
-  if (updateError) throw new Error(`Could not record sent email: ${updateError.message}`);
+  if (updateError) throw new Error("Could not record sent email: " + updateError.message);
   return true;
 }
-
 export async function sendWelcomeEmail(
   admin: AdminClient,
   userId: string,
@@ -129,7 +204,11 @@ export async function sendOrderConfirmationEmail(
   recipient: string,
   order: OrderEmail,
   items: OrderEmailItem[],
+  eventKey = `order-${order.id}`,
 ): Promise<boolean> {
+  const itemSubtotal = items.reduce((sum, item) => sum + item.unit_price_inr * item.quantity, 0);
+  const shipping = itemSubtotal === 0 || itemSubtotal >= 2999 ? 0 : 149;
+  const discount = Math.max(0, itemSubtotal + shipping - order.total_inr);
   const rows = items
     .map(
       (item) => `<tr>
@@ -152,17 +231,15 @@ export async function sendOrderConfirmationEmail(
      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse">
        <thead><tr><th align="left" style="padding:10px 8px;border-bottom:2px solid #26352d">Item</th><th align="right" style="padding:10px 8px;border-bottom:2px solid #26352d">Amount</th></tr></thead>
        <tbody>${rows}</tbody>
-       <tfoot><tr><td style="padding:14px 8px"><strong>Total paid</strong></td><td align="right" style="padding:14px 8px"><strong>${formatINR(order.total_inr)}</strong></td></tr></tfoot>
+       <tfoot>
+         <tr><td style="padding:10px 8px">Shipping</td><td align="right" style="padding:10px 8px">${shipping ? formatINR(shipping) : "Free"}</td></tr>
+         ${discount > 0 ? `<tr><td style="padding:10px 8px">Coupon discount</td><td align="right" style="padding:10px 8px">−${formatINR(discount)}</td></tr>` : ""}
+         <tr><td style="padding:14px 8px"><strong>Total paid</strong></td><td align="right" style="padding:14px 8px"><strong>${formatINR(order.total_inr)}</strong></td></tr>
+       </tfoot>
      </table>
      <h2 style="margin:26px 0 8px;font-size:16px">Delivery details</h2>
      <p style="margin:0">${address}<br />Phone: ${escapeHtml(order.shipping_phone)}</p>
      <p style="margin-top:28px">We’ll keep you updated as your order makes its way to you.</p>`,
   );
-  return sendEmailOnce(
-    admin,
-    `order-${order.id}`,
-    recipient,
-    `Order confirmed - ${order.id}`,
-    html,
-  );
+  return sendEmailOnce(admin, eventKey, recipient, `Order confirmed - ${order.id}`, html);
 }

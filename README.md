@@ -28,24 +28,54 @@ npm start
 ## Transactional email setup
 
 Order confirmations are sent after Razorpay payment verification. A welcome
-email is sent the first time a confirmed user opens the app after signing in.
-Email delivery uses [Resend](https://resend.com/); the API key and sender must
-be configured on the server, never as `VITE_*` variables.
+email is sent once after a user confirms their email and signs in. Email
+delivery supports both [Resend](https://resend.com/) and [Mailtrap](https://mailtrap.io/). Configure the provider on the server, never as `VITE_*` variables.
 
-1. Create a Resend account and verify a sending domain. For local-only testing,
-   Resend's `onboarding@resend.dev` sender can only send to the account owner's
-   verified email address.
-2. Add `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to the local `.env` file and
-   to the production server's environment variables. Use a sender such as
-   `Art & Decor <orders@your-verified-domain.example>`.
+### Resend (recommended for live delivery)
+
+1. Create a Resend API key and verify a sending domain.
+2. Add these server-side variables to the local `.env` file:
+
+   ```env
+   RESEND_API_KEY=your-resend-api-key
+   RESEND_FROM_EMAIL="Art & Decor <noreply@your-domain.com>"
+   ```
+
 3. In the Supabase SQL Editor, run
    [`supabase/migrations/20261022180000_email_notifications.sql`](./supabase/migrations/20261022180000_email_notifications.sql)
    once to create the private email-delivery log table.
-4. Restart the local app. For production, configure the same server-side
-   variables and apply the migration to the production Supabase project.
+4. Restart the local app.
+
+### Mailtrap (for sandbox or testing)
+
+1. Create a sandbox in Mailtrap and copy its Sandbox ID and API token.
+2. Add these server-side variables to the local `.env` file:
+
+   ```env
+   MAILTRAP_MODE=sandbox
+   MAILTRAP_API_TOKEN=your-mailtrap-api-token
+   MAILTRAP_INBOX_ID=your-sandbox-id
+   MAILTRAP_FROM_NAME=Art & Decor
+   ```
+
+   Sandbox messages are captured in the Mailtrap inbox and are not delivered
+   to real recipients. No sending domain is needed for sandbox testing.
+3. Restart the local app. For live delivery, verify a sending domain in
+   Mailtrap and set `MAILTRAP_MODE=transactional`, `MAILTRAP_API_TOKEN`,
+   `MAILTRAP_FROM_EMAIL`, and optionally `MAILTRAP_FROM_NAME` in the
+   production server environment. Apply the email log migration to the
+   production Supabase project as well.
 
 ## Login inactivity timeout
 
 Signed-in users are automatically logged out after one minute without activity.
 The timeout is tracked across tabs and survives a page reload on the same
 browser.
+
+## Checkout coupons
+
+Checkout accepts `ART100` (100%), `ART60` (60%), and `ART30` (30%) discounts on
+the product subtotal. Shipping is calculated separately and is not discounted.
+Coupons can be reused without a redemption limit. A coupon is validated against
+server-side product prices before payment; a zero-payable order is not accepted
+because checkout requires a verified Razorpay payment.
