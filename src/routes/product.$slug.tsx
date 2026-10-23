@@ -50,13 +50,21 @@ function ProductPage() {
           <div className="flex items-center rounded-md border">
             <button className="p-3" aria-label="Decrease" onClick={() => setQty(Math.max(1, qty - 1))}><Minus className="h-4 w-4" /></button>
             <span className="w-8 text-center">{qty}</span>
-            <button className="p-3" aria-label="Increase" onClick={() => setQty(Math.min(p.stock, qty + 1))}><Plus className="h-4 w-4" /></button>
+            <button className="p-3" aria-label="Increase" disabled={out || qty >= p.stock} onClick={() => setQty(Math.min(p.stock, qty + 1))}><Plus className="h-4 w-4" /></button>
           </div>
           <Button size="lg" className="flex-1" disabled={out} onClick={() => { add({ productId: p.id, slug: p.slug, name: p.name, price: p.price_inr, image: p.image_url }, qty); toast.success("Added to cart"); }}>
             {out ? "Sold out" : "Add to cart"}
           </Button>
         </div>
-        {!out && p.stock < 5 && <p className="mt-3 text-sm text-primary">Only {p.stock} left</p>}
+        {out ? (
+          <p className="mt-3 text-sm font-medium text-destructive" role="status">
+            Out of stock
+          </p>
+        ) : (
+          <p className="mt-3 text-sm text-primary">
+            {p.stock < 5 ? `Only ${p.stock} left` : `${p.stock} in stock`}
+          </p>
+        )}
       </div>
     </div>
   );
