@@ -60,6 +60,7 @@ delivery supports both [Resend](https://resend.com/) and [Mailtrap](https://mail
 
    Sandbox messages are captured in the Mailtrap inbox and are not delivered
    to real recipients. No sending domain is needed for sandbox testing.
+
 3. Restart the local app. For live delivery, verify a sending domain in
    Mailtrap and set `MAILTRAP_MODE=transactional`, `MAILTRAP_API_TOKEN`,
    `MAILTRAP_FROM_EMAIL`, and optionally `MAILTRAP_FROM_NAME` in the
@@ -68,7 +69,7 @@ delivery supports both [Resend](https://resend.com/) and [Mailtrap](https://mail
 
 ## Login inactivity timeout
 
-Signed-in users are automatically logged out after one minute without activity.
+Signed-in users are automatically logged out after two minutes without activity.
 The timeout is tracked across tabs and survives a page reload on the same
 browser.
 
@@ -79,3 +80,22 @@ the product subtotal. Shipping is calculated separately and is not discounted.
 Coupons can be reused without a redemption limit. A coupon is validated against
 server-side product prices before payment; a zero-payable order is not accepted
 because checkout requires a verified Razorpay payment.
+
+## Product size selection
+
+Product pages default to 40 inches; customers can choose a custom size instead.
+The 40-inch price is the base price. Each inch above 40 adds one-fortieth of the
+base price, rounded to the nearest rupee. Sizes below 40 keep the base price.
+The selected size and calculated unit price are saved with each order item.
+Apply [`supabase/migrations/20261025150000_order_item_size.sql`](./supabase/migrations/20261025150000_order_item_size.sql)
+to the Supabase project before deploying this checkout change.
+
+## Expected delivery date
+
+After payment is verified, the order gets an estimated delivery date seven
+working days later (weekends excluded; public holidays are not accounted for).
+The estimate is included in the order confirmation email and shown in the
+customer's account. Apply
+[`supabase/migrations/20261026120000_order_expected_delivery_date.sql`](./supabase/migrations/20261026120000_order_expected_delivery_date.sql)
+to the Supabase project before deploying this change. This is an estimate, not
+live courier tracking.

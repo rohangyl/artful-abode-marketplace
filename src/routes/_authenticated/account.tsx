@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { formatINR } from "@/lib/format";
+import { formatDeliveryDate } from "@/lib/delivery";
 import { sendPaidOrderDetails } from "@/lib/payments.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -360,11 +361,24 @@ function Account() {
                   <ul className="mt-3 text-sm">
                     {o.order_items.map((i) => (
                       <li key={i.id}>
-                        {i.product_name} × {i.quantity}
+                        {i.product_name}
+                        {i.size_inches !== null ? ` · ${i.size_inches} in` : ""} × {i.quantity}
                       </li>
                     ))}
                   </ul>
                   <p className="mt-2 font-medium">{formatINR(o.total_inr)}</p>
+                  {formatDeliveryDate(o.expected_delivery_date) ? (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Expected delivery:{" "}
+                      <span className="font-medium text-foreground">
+                        {formatDeliveryDate(o.expected_delivery_date)}
+                      </span>
+                      <span className="mt-1 block text-xs">
+                        Estimate: 7 working days after payment; weekends excluded. Public holidays
+                        may affect delivery.
+                      </span>
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ul>

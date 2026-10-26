@@ -1,10 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { useCart } from "@/lib/cart";
-import { cartTotals, formatINR } from "@/lib/format";
+import { cartTotals, formatINR, priceForSize } from "@/lib/format";
 import { createCheckout, quoteCheckoutCoupon, verifyPayment } from "@/lib/payments.functions";
+import { productsQuery } from "@/lib/products.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -55,6 +57,7 @@ const fields = [
 
 function Checkout() {
   const { items, clear } = useCart();
+  const products = useQuery(productsQuery());
   const { user } = useAuth();
   const navigate = useNavigate();
   const start = useServerFn(createCheckout);
@@ -80,9 +83,16 @@ function Checkout() {
     state: "",
     pincode: "",
   });
-  const t = cartTotals(
-    items.map((i) => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
-  );
+  const checkoutLines = items.map((item) => {
+    const basePrice =
+      products.data?.find((product) => product.id === item.productId)?.price_inr ?? item.price;
+    return {
+      productId: item.productId,
+      quantity: item.quantity,
+      price: priceForSize(basePrice, item.sizeInches),
+    };
+  });
+  const t = cartTotals(checkoutLines);
   const displayedTotals = appliedCoupon ?? t;
 
   const applyCoupon = async () => {
@@ -91,7 +101,11 @@ function Checkout() {
     try {
       const quote = await quoteCoupon({
         data: {
-          items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+          items: items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            sizeInches: item.sizeInches,
+          })),
           couponCode: couponInput,
         },
       });
@@ -115,7 +129,7 @@ function Checkout() {
       .then(({ data }) => {
         if (data)
           setShip((s) => ({
-            name: data.full_name ?? s.name,
+            name: "",
             phone: data.phone ?? "",
             address: data.address ?? "",
             city: data.city ?? "",
@@ -134,6 +148,10 @@ function Checkout() {
         </Button>
       </div>
     );
+  const productsReady =
+    !products.isLoading &&
+    !!products.data &&
+    items.every((item) => products.data.some((product) => product.id === item.productId));
 
   const pay = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,7 +160,11 @@ function Checkout() {
       if (!(await loadRazorpay()) || !window.Razorpay) throw new Error("Could not load Razorpay.");
       const res = await start({
         data: {
-          items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+          items: items.map((i) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            sizeInches: i.sizeInches,
+          })),
           couponCode: appliedCoupon?.couponCode,
           shipping: ship,
         },
@@ -192,7 +214,7 @@ function Checkout() {
       rzp.open();
     } catch (err) {
       const msg = (err as Error).message;
-      toast.error(msg.startsWith("[") ? "Please check your shipping details." : msg);
+      toast.error(msg.startsWith("[") ? "Please check your checkout details and try again." : msg);
       setBusy(false);
     }
   };
@@ -211,9 +233,18 @@ function Checkout() {
               <Input
                 id={k}
                 required
+                type={k === "phone" ? "tel" : "text"}
+                inputMode={k === "phone" || k === "pincode" ? "numeric" : undefined}
                 value={ship[k]}
                 onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
-                maxLength={k === "address" ? 300 : 100}
+                maxLength={k === "address" ? 300 : k === "phone" ? 10 : k === "pincode" ? 6 : 100}
+                placeholder={
+                  k === "phone"
+                    ? "10-digit number, without +91"
+                    : k === "pincode"
+                      ? "6-digit PIN code"
+                      : undefined
+                }
               />
             </div>
           ))}
@@ -225,9 +256,17 @@ function Checkout() {
           {items.map((i) => (
             <li key={i.productId} className="flex justify-between">
               <span>
-                {i.name} × {i.quantity}
+                {i.name} · {i.sizeInches} in × {i.quantity}
               </span>
-              <span>{formatINR(i.price * i.quantity)}</span>
+              <span>
+                {formatINR(
+                  priceForSize(
+                    products.data?.find((product) => product.id === i.productId)?.price_inr ??
+                      i.price,
+                    i.sizeInches,
+                  ) * i.quantity,
+                )}
+              </span>
             </li>
           ))}
         </ul>
@@ -292,7 +331,22 @@ function Checkout() {
             <span>{formatINR(displayedTotals.total)}</span>
           </div>
         </div>
-        <Button type="submit" className="mt-6 w-full" size="lg" disabled={busy || applyingCoupon}>
+        {products.isError && (
+          <p className="mt-4 text-sm text-destructive" role="alert">
+            Could not refresh product prices. Reload the page before payment.
+          </p>
+        )}
+        {!products.isError && !productsReady && (
+          <p className="mt-4 text-sm text-muted-foreground" role="status">
+            Refreshing product prices…
+          </p>
+        )}
+        <Button
+          type="submit"
+          className="mt-6 w-full"
+          size="lg"
+          disabled={busy || applyingCoupon || !productsReady}
+        >
           {busy ? "Processing…" : `Pay ${formatINR(displayedTotals.total)}`}
         </Button>
         <p className="mt-3 text-center text-xs text-muted-foreground">

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cartTotals } from "@/lib/format";
+import { cartTotals, priceForSize } from "@/lib/format";
 import { calculateCouponTotals, getCouponDiscountPercent } from "@/lib/coupons";
 import { hmacSha256Hex, verifyRazorpaySignature } from "@/lib/razorpay-signature";
 
@@ -13,6 +13,22 @@ describe("cart totals", () => {
   });
   it("ships free from ₹2,999", () => {
     expect(cartTotals([{ productId: "a", quantity: 1, price: 2999 }]).shipping).toBe(0);
+  });
+});
+
+describe("size-based product pricing", () => {
+  it("keeps the base price at and below 40 inches", () => {
+    expect(priceForSize(4000, 40)).toBe(4000);
+    expect(priceForSize(4000, 32)).toBe(4000);
+  });
+
+  it("adds one-fortieth of the base price for every inch above 40", () => {
+    expect(priceForSize(4000, 41)).toBe(4100);
+    expect(priceForSize(4000, 42)).toBe(4200);
+  });
+
+  it("rounds calculated prices to whole rupees", () => {
+    expect(priceForSize(1499, 41)).toBe(1536);
   });
 });
 

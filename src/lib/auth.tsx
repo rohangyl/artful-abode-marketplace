@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { sendWelcomeEmailOnce } from "@/lib/emails.functions";
 
-const IDLE_TIMEOUT_MS = 60_000;
+const IDLE_TIMEOUT_MS = 120_000;
 const ACTIVITY_STORAGE_PREFIX = "artful-abode:last-activity:";
 const ACTIVITY_PERSIST_INTERVAL_MS = 5_000;
 

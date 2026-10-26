@@ -75,7 +75,14 @@ function Orders() {
               <tr key={o.id} className="border-b align-top last:border-0">
                 <td className="p-3">#{o.id.slice(0, 8)}<br /><span className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString("en-IN")}</span></td>
                 <td className="p-3">{o.shipping_name}<br /><span className="text-xs text-muted-foreground">{o.shipping_phone} · {o.shipping_city}, {o.shipping_state} {o.shipping_pincode}</span></td>
-                <td className="p-3">{o.order_items.map((i) => <div key={i.id}>{i.product_name} × {i.quantity}</div>)}</td>
+                <td className="p-3">
+                  {o.order_items.map((i) => (
+                    <div key={i.id}>
+                      {i.product_name}
+                      {i.size_inches !== null ? ` · ${i.size_inches} in` : ""} × {i.quantity}
+                    </div>
+                  ))}
+                </td>
                 <td className="p-3">{formatINR(o.total_inr)}</td>
                 <td className="p-3">
                   <select value={o.status} onChange={(e) => setStatus(o.id, e.target.value as Status)} className="rounded border bg-background px-2 py-1 capitalize">
@@ -102,7 +109,11 @@ function Products() {
   const qc = useQueryClient();
   const [edit, setEdit] = useState<Partial<Product> | null>(null);
   const { data } = useQuery({ queryKey: ["admin-products"], queryFn: async () => (await supabase.from("products").select("*").order("created_at", { ascending: false })).data ?? [] });
-  const refresh = () => { qc.invalidateQueries({ queryKey: ["admin-products"] }); qc.invalidateQueries({ queryKey: ["products"] }); };
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["admin-products"] });
+    qc.invalidateQueries({ queryKey: ["products"] });
+    qc.invalidateQueries({ queryKey: ["product"] });
+  };
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();

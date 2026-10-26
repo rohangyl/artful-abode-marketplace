@@ -66,6 +66,7 @@ export type Database = {
           product_id: string | null
           product_name: string
           quantity: number
+          size_inches: number | null
           unit_price_inr: number
         }
         Insert: {
@@ -74,6 +75,7 @@ export type Database = {
           product_id?: string | null
           product_name: string
           quantity: number
+          size_inches?: number | null
           unit_price_inr: number
         }
         Update: {
@@ -82,6 +84,7 @@ export type Database = {
           product_id?: string | null
           product_name?: string
           quantity?: number
+          size_inches?: number | null
           unit_price_inr?: number
         }
         Relationships: [
@@ -104,6 +107,7 @@ export type Database = {
       orders: {
         Row: {
           created_at: string
+          expected_delivery_date: string | null
           id: string
           razorpay_order_id: string | null
           razorpay_payment_id: string | null
@@ -119,6 +123,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          expected_delivery_date?: string | null
           id?: string
           razorpay_order_id?: string | null
           razorpay_payment_id?: string | null
@@ -134,6 +139,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          expected_delivery_date?: string | null
           id?: string
           razorpay_order_id?: string | null
           razorpay_payment_id?: string | null

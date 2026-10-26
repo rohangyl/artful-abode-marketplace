@@ -29,7 +29,13 @@ export const listProducts = createServerFn({ method: "GET" }).handler(async () =
 export const getProduct = createServerFn({ method: "GET" })
   .inputValidator((d: { slug: string }) => ({ slug: String(d.slug).slice(0, 120) }))
   .handler(async ({ data }) => {
-    const { data: p } = await publicClient().from("products").select("*").eq("slug", data.slug).eq("active", true).maybeSingle();
+    const { data: p, error } = await publicClient()
+      .from("products")
+      .select("*")
+      .eq("slug", data.slug)
+      .eq("active", true)
+      .maybeSingle();
+    if (error) throw new Error("Could not load product: " + error.message);
     return p;
   });
 

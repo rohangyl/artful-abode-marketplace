@@ -1,12 +1,14 @@
 import type { Database } from "@/integrations/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatINR } from "@/lib/format";
+import { formatDeliveryDate } from "@/lib/delivery";
 
 type AdminClient = SupabaseClient<Database>;
 
 type OrderEmail = {
   id: string;
   total_inr: number;
+  expected_delivery_date: string | null;
   shipping_name: string;
   shipping_phone: string;
   shipping_address: string;
@@ -18,6 +20,7 @@ type OrderEmail = {
 type OrderEmailItem = {
   product_name: string;
   quantity: number;
+  size_inches: number | null;
   unit_price_inr: number;
 };
 
@@ -212,7 +215,7 @@ export async function sendOrderConfirmationEmail(
   const rows = items
     .map(
       (item) => `<tr>
-        <td style="padding:10px 8px;border-bottom:1px solid #e8e5df">${escapeHtml(item.product_name)} × ${item.quantity}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #e8e5df">${escapeHtml(item.product_name)}${item.size_inches !== null ? ` · ${item.size_inches} in` : ""} × ${item.quantity}</td>
         <td align="right" style="padding:10px 8px;border-bottom:1px solid #e8e5df">${formatINR(item.unit_price_inr * item.quantity)}</td>
       </tr>`,
     )
@@ -223,6 +226,7 @@ export async function sendOrderConfirmationEmail(
   ]
     .map(escapeHtml)
     .join("<br />");
+  const deliveryDate = formatDeliveryDate(order.expected_delivery_date);
   const html = emailLayout(
     "Your order is confirmed",
     `<p>Dear ${escapeHtml(order.shipping_name)},</p>
@@ -238,6 +242,7 @@ export async function sendOrderConfirmationEmail(
        </tfoot>
      </table>
      <h2 style="margin:26px 0 8px;font-size:16px">Delivery details</h2>
+     ${deliveryDate ? `<p style="padding:14px;background:#f6f3ee;border-radius:8px"><strong>Expected delivery:</strong> ${escapeHtml(deliveryDate)}<br /><span style="font-size:12px;color:#66736b">Estimate: 7 working days after payment, excluding weekends. Public holidays may affect delivery.</span></p>` : ""}
      <p style="margin:0">${address}<br />Phone: ${escapeHtml(order.shipping_phone)}</p>
      <p style="margin-top:28px">We’ll keep you updated as your order makes its way to you.</p>`,
   );

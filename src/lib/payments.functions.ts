@@ -1,19 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { cartTotals } from "@/lib/format";
+import { cartTotals, priceForSize } from "@/lib/format";
 import {
   calculateCouponTotals,
   getCouponDiscountPercent,
   normalizeCouponCode,
 } from "@/lib/coupons";
 import { verifyRazorpaySignature } from "@/lib/razorpay-signature";
+import { estimateDeliveryDate } from "@/lib/delivery";
 
 const checkoutItemsSchema = z
   .array(
     z.object({
       productId: z.string().uuid(),
       quantity: z.number().int().min(1).max(20),
+      sizeInches: z.number().min(1).max(999).default(40),
     }),
   )
   .min(1)
@@ -25,20 +27,43 @@ const checkoutSchema = z.object({
   items: checkoutItemsSchema,
   couponCode: couponCodeSchema,
   shipping: z.object({
-    name: z.string().trim().min(2).max(100),
+    name: z.string().trim().min(2, "Enter your full name.").max(100),
     phone: z
       .string()
       .trim()
-      .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number"),
-    address: z.string().trim().min(5).max(300),
-    city: z.string().trim().min(2).max(80),
-    state: z.string().trim().min(2).max(80),
+      .regex(/^[6-9]\d{9}$/, "Enter 10 digits starting with 6–9, without +91 or spaces."),
+    address: z.string().trim().min(5, "Enter a complete address.").max(300),
+    city: z.string().trim().min(2, "Enter your city.").max(80),
+    state: z.string().trim().min(2, "Enter your state.").max(80),
     pincode: z
       .string()
       .trim()
-      .regex(/^\d{6}$/, "Enter a 6-digit PIN code"),
+      .regex(/^\d{6}$/, "Enter a 6-digit PIN code without spaces."),
   }),
 });
+
+function parseCheckoutInput(data: unknown) {
+  const result = checkoutSchema.safeParse(data);
+  if (result.success) return result.data;
+
+  const issue = result.error.issues[0];
+  if (!issue) throw new Error("Please check your checkout details.");
+
+  const fieldLabels: Record<string, string> = {
+    name: "Full name",
+    phone: "Mobile number",
+    address: "Address",
+    city: "City",
+    state: "State",
+    pincode: "PIN code",
+    items: "Cart",
+    productId: "Product",
+    quantity: "Quantity",
+    sizeInches: "Product size",
+  };
+  const field = issue.path.map((part) => fieldLabels[String(part)] ?? String(part)).join(" ");
+  throw new Error(field ? `${field}: ${issue.message}` : issue.message);
+}
 
 const couponQuoteSchema = z.object({
   items: checkoutItemsSchema,
@@ -69,7 +94,11 @@ export const quoteCheckoutCoupon = createServerFn({ method: "POST" })
         throw new Error("A product in your cart is no longer available.");
       if (product.stock < item.quantity)
         throw new Error(`Only ${product.stock} left of ${product.name}.`);
-      return { productId: product.id, quantity: item.quantity, price: product.price_inr };
+      return {
+        productId: product.id,
+        quantity: item.quantity,
+        price: priceForSize(product.price_inr, item.sizeInches),
+      };
     });
     const totals = cartTotals(lines);
     const quote = calculateCouponTotals(totals.subtotal, totals.shipping, percent);
@@ -83,7 +112,7 @@ export const quoteCheckoutCoupon = createServerFn({ method: "POST" })
 
 export const createCheckout = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => checkoutSchema.parse(d))
+  .inputValidator(parseCheckoutInput)
   .handler(async ({ data, context }) => {
     const keyId = process.env["RAZORPAY_KEY_ID"];
     const keySecret = process.env["RAZORPAY_KEY_SECRET"];
@@ -100,7 +129,13 @@ export const createCheckout = createServerFn({ method: "POST" })
       const p = products?.find((x) => x.id === i.productId);
       if (!p || !p.active) throw new Error("A product in your cart is no longer available.");
       if (p.stock < i.quantity) throw new Error(`Only ${p.stock} left of ${p.name}.`);
-      return { productId: p.id, name: p.name, price: p.price_inr, quantity: i.quantity };
+      return {
+        productId: p.id,
+        name: p.name,
+        price: priceForSize(p.price_inr, i.sizeInches),
+        quantity: i.quantity,
+        sizeInches: i.sizeInches,
+      };
     });
     const baseTotals = cartTotals(lines);
     const percent = data.couponCode ? couponPercent(data.couponCode) : 0;
@@ -151,6 +186,7 @@ export const createCheckout = createServerFn({ method: "POST" })
         product_name: l.name,
         unit_price_inr: l.price,
         quantity: l.quantity,
+        size_inches: l.sizeInches,
       })),
     );
     if (itemsError) throw new Error("Could not save order items: " + itemsError.message);
@@ -184,7 +220,7 @@ export const verifyPayment = createServerFn({ method: "POST" })
     const { data: order } = await supabaseAdmin
       .from("orders")
       .select(
-        "id,status,user_id,total_inr,shipping_name,shipping_phone,shipping_address,shipping_city,shipping_state,shipping_pincode",
+        "id,status,user_id,total_inr,shipping_name,shipping_phone,shipping_address,shipping_city,shipping_state,shipping_pincode,expected_delivery_date",
       )
       .eq("razorpay_order_id", data.razorpay_order_id)
       .eq("user_id", context.userId)
@@ -192,9 +228,14 @@ export const verifyPayment = createServerFn({ method: "POST" })
     if (!order) throw new Error("Order not found.");
     let paymentConfirmed = order.status === "paid";
     if (order.status === "pending") {
+      const expectedDeliveryDate = estimateDeliveryDate();
       const { data: updatedOrder, error: updateError } = await supabaseAdmin
         .from("orders")
-        .update({ status: "paid", razorpay_payment_id: data.razorpay_payment_id })
+        .update({
+          status: "paid",
+          razorpay_payment_id: data.razorpay_payment_id,
+          expected_delivery_date: expectedDeliveryDate,
+        })
         .eq("id", order.id)
         .eq("status", "pending")
         .select("id")
@@ -203,6 +244,7 @@ export const verifyPayment = createServerFn({ method: "POST" })
 
       if (updatedOrder) {
         paymentConfirmed = true;
+        order.expected_delivery_date = expectedDeliveryDate;
         const { data: items, error: itemsError } = await supabaseAdmin
           .from("order_items")
           .select("product_id,quantity")
@@ -225,11 +267,20 @@ export const verifyPayment = createServerFn({ method: "POST" })
       } else {
         const { data: latestOrder, error: latestOrderError } = await supabaseAdmin
           .from("orders")
-          .select("status")
+          .select("status,expected_delivery_date")
           .eq("id", order.id)
           .single();
         if (latestOrderError) throw new Error(latestOrderError.message);
         paymentConfirmed = latestOrder.status === "paid";
+        if (paymentConfirmed && !latestOrder.expected_delivery_date) {
+          const { error: deliveryDateError } = await supabaseAdmin
+            .from("orders")
+            .update({ expected_delivery_date: estimateDeliveryDate() })
+            .eq("id", order.id)
+            .is("expected_delivery_date", null);
+          if (deliveryDateError) throw new Error(deliveryDateError.message);
+          order.expected_delivery_date = estimateDeliveryDate();
+        }
       }
     }
 
@@ -240,7 +291,7 @@ export const verifyPayment = createServerFn({ method: "POST" })
         context.supabase.auth.getUser(),
         supabaseAdmin
           .from("order_items")
-          .select("product_name,quantity,unit_price_inr")
+          .select("product_name,quantity,unit_price_inr,size_inches")
           .eq("order_id", order.id),
       ]);
       if (itemsError) throw new Error(itemsError.message);
@@ -279,7 +330,7 @@ export const sendPaidOrderDetails = createServerFn({ method: "POST" })
     const { data: order, error: orderError } = await supabaseAdmin
       .from("orders")
       .select(
-        "id,status,user_id,total_inr,shipping_name,shipping_phone,shipping_address,shipping_city,shipping_state,shipping_pincode",
+        "id,status,user_id,total_inr,shipping_name,shipping_phone,shipping_address,shipping_city,shipping_state,shipping_pincode,expected_delivery_date",
       )
       .eq("id", data.orderId)
       .eq("user_id", context.userId)
@@ -289,7 +340,7 @@ export const sendPaidOrderDetails = createServerFn({ method: "POST" })
 
     const { data: items, error: itemsError } = await supabaseAdmin
       .from("order_items")
-      .select("product_name,quantity,unit_price_inr")
+      .select("product_name,quantity,unit_price_inr,size_inches")
       .eq("order_id", order.id);
     if (itemsError) throw new Error(itemsError.message);
 

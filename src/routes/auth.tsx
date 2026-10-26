@@ -163,7 +163,9 @@ function AuthPage() {
 
   return (
     <div className="mx-auto max-w-md px-4 py-20">
-      <h1 className="text-center text-5xl">{mode === "in" ? "Welcome back" : mode === "up" ? "Create account" : "Reset password"}</h1>
+      <h1 className="text-center text-5xl">
+        {mode === "in" ? "Sign in" : mode === "up" ? "Create account" : "Reset password"}
+      </h1>
       <form onSubmit={submit} className="mt-10 space-y-4 rounded-md bg-card p-8 shadow-soft">
         {phoneMode ? (
           <>
