@@ -11,6 +11,6 @@ export default defineConfig({
     tsConfigPaths(),
     tanstackStart({ server: { entry: "./src/server.ts" } }),
     react(),
-    netlify({ dev: { edgeFunctions: { enabled: false } } }),
+    netlify(),
   ],
 });
